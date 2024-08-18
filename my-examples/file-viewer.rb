@@ -1,5 +1,5 @@
 require 'curses'
-
+#require "debug/open"
 
 file = ARGV.shift || fail("You must supply a file to view")
 File.exist?(file) || fail("You must supply a valid file path. #{file} doesn't exist.")
@@ -14,32 +14,52 @@ class ViewPort
 
   def initialize(window, lines)
     @lines = lines
-    @dimensions = Dimensions.new(x: 0, y: 0, width: window.maxx - 1, height: window.maxy - 1)
+    @lines.push("\n") if lines.last.end_with?("\n")
+    @dimensions = Dimensions.new(x: 0, y: 0, width: window.maxx, height: window.maxy)
     @viewable_dimensions = @dimensions.dup
     @window = window
   end
 
   def contents
+    $log.puts "CONTENTS WIDTH: #{(viewable_dimensions.x...viewable_dimensions.width).inspect}"
+    $log.puts "CONTENTS HEIGHT: #{(viewable_dimensions.y...viewable_dimensions.height).inspect}"
     lines[viewable_dimensions.y...viewable_dimensions.height].map do |line|
-      line[viewable_dimensions.x...viewable_dimensions.width] + "\n"
-    end.join
+      line[viewable_dimensions.x...viewable_dimensions.width].sub(%r{\n+$}, "")
+    end
   end
 
   def draw
-    window.setpos 0, 0
-    window.addstr contents
+    window.clear
+    contents.each.with_index do |line, index|
+      window.setpos index, 0
+      $log.puts "addstr: #{line.inspect}\tsetpos: #{index}"
+      window.addstr line
+    end
+    $log.puts "viewable_dimensions: #{viewable_dimensions.inspect}"
+    $log.puts "contents: #{contents.inspect}"
+    $log.puts
+
     window.refresh
   end
 
   def resize
-    @dimensions = Dimensions.new(x: 0, y: 0, width: window.maxx - 1, height: window.maxy - 1),
+    old_dimensions = dimensions
+    new_dimensions = Dimensions.new(x: 0, y: 0, width: window.maxx, height: window.maxy)
+
+    $log.puts "old dimensions: #{@dimensions.inspect}"
+    @dimensions = Dimensions.new(x: 0, y: 0, width: window.maxx, height: window.maxy)
+    $log.puts "new dimensions: #{@dimensions.inspect}"
+
     new_viewable_dimensions = Dimensions.new(
       x: viewable_dimensions.x,
       y: viewable_dimensions.y,
-      width: window.maxx - 1,
-      height: window.maxy - 1
+      width: window.maxx,
+      height: viewable_dimensions.y + window.maxy
     )
+    $log.puts "old viewables dimensions: #{@viewable_dimensions.inspect}"
     @viewable_dimensions = new_viewable_dimensions
+    $log.puts "new viewables dimensions: #{@viewable_dimensions.inspect}"
+    $log.puts
     draw
   end
 
@@ -53,8 +73,15 @@ class ViewPort
           height: viewable_dimensions.height + 1
         )
         @viewable_dimensions = new_viewable_dimensions
-        window.setpos dimensions.height, 0
-        window.addstr contents.lines.last
+        window.scrl 1
+        window.setpos dimensions.height - 1, 0
+
+    $log.puts "viewable_dimensions: #{viewable_dimensions.inspect}"
+    $log.puts "  contents: #{contents.inspect}"
+#    $log.puts "  lines: #{lines.inspect}"
+    $log.puts
+
+        window.addstr contents.last
       end
     elsif num.negative?
       if viewable_dimensions.y > 0
@@ -67,7 +94,13 @@ class ViewPort
         @viewable_dimensions = new_viewable_dimensions
         window.scrl -1
         window.setpos 0, 0
-        window.addstr contents.lines.first
+
+    $log.puts "viewable_dimensions: #{viewable_dimensions.inspect}"
+    $log.puts "  contents: #{contents.inspect}"
+#    $log.puts "  lines: #{lines.inspect}"
+    $log.puts
+
+        window.addstr contents.first
       end
     end
   end
@@ -84,13 +117,8 @@ begin
 
   view_port = ViewPort.new(
     window,
-    File.read(file).lines.map(&:chomp)
+    File.read(file).gsub(" ", ".").lines
   )
-
-  Signal.trap('SIGWINCH') do
-    $log.puts "resizing"
-    view_port.resize
-  end
 
   view_port.draw
 
@@ -99,6 +127,9 @@ begin
       case ch
         when "q"
           exit 0
+        when Curses::KEY_RESIZE
+          $log.puts "WINDOW RESIZE: x=#{window.maxx}\ty=#{window.maxy}"
+          view_port.resize
         when Curses::KEY_DOWN
           view_port.scroll_y(1)
         when Curses::KEY_UP

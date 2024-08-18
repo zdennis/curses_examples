@@ -63,6 +63,14 @@ class ViewPort
     draw
   end
 
+  def scroll_up
+    scroll_y(-1)
+  end
+
+  def scroll_down
+    scroll_y(1)
+  end
+
   def scroll_y(num)
     if num.positive?
       if viewable_dimensions.height < lines.length
@@ -131,9 +139,9 @@ begin
           $log.puts "WINDOW RESIZE: x=#{window.maxx}\ty=#{window.maxy}"
           view_port.resize
         when Curses::KEY_DOWN
-          view_port.scroll_y(1)
+          view_port.scroll_down
         when Curses::KEY_UP
-          view_port.scroll_y(-1)
+          view_port.scroll_up
       end
 
       window.refresh

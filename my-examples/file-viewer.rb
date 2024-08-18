@@ -24,7 +24,7 @@ class ViewPort
     $log.puts "CONTENTS WIDTH: #{(viewable_dimensions.x...viewable_dimensions.width).inspect}"
     $log.puts "CONTENTS HEIGHT: #{(viewable_dimensions.y...viewable_dimensions.height).inspect}"
     lines[viewable_dimensions.y...viewable_dimensions.height].map do |line|
-      line[viewable_dimensions.x...viewable_dimensions.width].sub(%r{\n+$}, "")
+      line[viewable_dimensions.x...viewable_dimensions.width].to_s.sub(%r{\n+$}, "")
     end
   end
 
@@ -70,6 +70,54 @@ class ViewPort
   def scroll_down
     scroll_y(1)
   end
+
+  def scroll_left
+    scroll_x(-11)
+  end
+
+  def scroll_right
+    scroll_x(1)
+  end
+
+  def max_line_width
+    lines.map(&:length).max
+  end
+
+  def scroll_x(num)
+    if num.positive?
+      if viewable_dimensions.width < max_line_width
+        new_viewable_dimensions = Dimensions.new(
+          x: viewable_dimensions.x + 1,
+          y: viewable_dimensions.y,
+          width: viewable_dimensions.width + 1,
+          height: viewable_dimensions.height
+        )
+        @viewable_dimensions = new_viewable_dimensions
+
+        $log.puts "viewable_dimensions: #{viewable_dimensions.inspect}"
+        $log.puts "  contents: #{contents.inspect}"
+
+        draw
+      end
+    elsif num.negative?
+      if viewable_dimensions.x > 0
+        new_viewable_dimensions = Dimensions.new(
+          x: viewable_dimensions.x - 1,
+          y: viewable_dimensions.y,
+          width: viewable_dimensions.width - 1,
+          height: viewable_dimensions.height
+        )
+        @viewable_dimensions = new_viewable_dimensions
+
+        $log.puts "viewable_dimensions: #{viewable_dimensions.inspect}"
+        $log.puts "  contents: #{contents.inspect}"
+
+        window.addstr contents.first
+        draw
+      end
+    end
+  end
+
 
   def scroll_y(num)
     if num.positive?
@@ -142,6 +190,10 @@ begin
           view_port.scroll_down
         when Curses::KEY_UP
           view_port.scroll_up
+        when Curses::KEY_LEFT
+          view_port.scroll_left
+        when Curses::KEY_RIGHT
+          view_port.scroll_right
       end
 
       window.refresh

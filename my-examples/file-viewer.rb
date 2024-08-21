@@ -1,4 +1,6 @@
 require 'curses'
+require 'shellwords'
+require 'delegate'
 #require "debug/open"
 
 file = ARGV.shift || fail("You must supply a file to view")
@@ -10,21 +12,24 @@ $log.sync = true
 Dimensions = Struct.new(:x, :y, :width, :height, keyword_init: true)
 
 class ViewPort
-  attr_reader :dimensions, :lines, :window, :viewable_dimensions
+  attr_reader :dimensions, :texts, :window, :viewable_dimensions
 
-  def initialize(window, lines)
-    @lines = lines
-    @lines.push("\n") if lines.last.end_with?("\n")
+  def initialize(window, texts)
+    @texts = texts
     @dimensions = Dimensions.new(x: 0, y: 0, width: window.maxx, height: window.maxy)
     @viewable_dimensions = @dimensions.dup
     @window = window
+  end
+
+  def lines
+    texts.lines
   end
 
   def contents
     $log.puts "CONTENTS WIDTH: #{(viewable_dimensions.x...viewable_dimensions.width).inspect}"
     $log.puts "CONTENTS HEIGHT: #{(viewable_dimensions.y...viewable_dimensions.height).inspect}"
     lines[viewable_dimensions.y...viewable_dimensions.height].map do |line|
-      line[viewable_dimensions.x...viewable_dimensions.width].to_s.sub(%r{\n+$}, "")
+      line[viewable_dimensions.x...viewable_dimensions.width].to_s.chomp
     end
   end
 
@@ -162,6 +167,89 @@ class ViewPort
   end
 end
 
+class Text < SimpleDelegator
+  attr_reader :attr, :text
+
+  def initialize(attr: nil, text:)
+    @attr = attr
+    @text = text
+    super(@text)
+  end
+
+  def [](value)
+    text = super
+    Text.new(attr: attr.dup, text: text)
+  end
+end
+
+class Line
+  attr_reader :text_nodes
+
+  def initialize(text_nodes = [])
+    @text_nodes = text_nodes
+  end
+
+  def <<(text_node)
+    @text_nodes << text_node
+  end
+
+  def [](value)
+    case value
+    when Range
+      position = 0
+      min, max = value.min, value.max
+      text_nodes.each_with_object(Line.new) do |text, line|
+        if position + text.length < min
+          # no-op
+        elsif position >= min && position + text.length <= max
+          line << text
+        elsif position >= min && position + text.length > max
+          end_range = max - position - text.length
+          line << text[0..end_range]
+        else
+          fail "Not implemented 2"
+        end
+        position += text.length
+      end
+    else
+      fail "Not implemented 1"
+    end
+  end
+
+  def to_s
+    text_nodes.map(&:to_s).join
+  end
+end
+
+class Texts
+  attr_reader :text_nodes
+
+  def initialize(text_nodes)
+    @text_nodes = text_nodes
+  end
+
+  def lines
+    lines = []
+    line = Line.new
+    text_nodes.each do |text_node|
+      if text_node.include?("\n")
+        text_node.scan(/^[^\n]*\n/).each do |raw_text_with_newline|
+          line << Text.new(attr: text_node.attr, text: raw_text_with_newline)
+          lines << line
+          line = Line.new
+        end
+      else
+        line << text_node
+      end
+    end
+    lines
+  end
+
+  def inspect
+    lines.join
+  end
+end
+
 begin
   Curses.cbreak
   Curses.curs_set 0
@@ -171,9 +259,17 @@ begin
   window.keypad = true
   window.scrollok true
 
+  output = %x{pygmentize #{file.shellescape}}
+
+  raw_texts = output.scan(%r{(\e\[[0-9;]*m)|([^\e]+)}).map do |ansii, text|
+    Text.new(attr: ansii, text: text.to_s)
+  end
+
+  texts = Texts.new(raw_texts)
+
   view_port = ViewPort.new(
     window,
-    File.read(file).gsub(" ", ".").lines
+    texts
   )
 
   view_port.draw

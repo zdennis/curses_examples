@@ -1,6 +1,7 @@
 require 'curses'
 require 'shellwords'
 require 'delegate'
+require "pry-byebug"
 #require "debug/open"
 
 file = ARGV.shift || fail("You must supply a file to view")
@@ -193,23 +194,60 @@ class Line
     @text_nodes << text_node
   end
 
+  def length
+    to_s.length
+  end
+
   def [](value)
+    $log.puts "-"*100
+    $log.puts "value: #{value.inspect}"
+
     case value
     when Range
       position = 0
       min, max = value.min, value.max
       text_nodes.each_with_object(Line.new) do |text, line|
-        if position + text.length < min
-          # no-op
-        elsif position >= min && position + text.length <= max
-          line << text
+        next if text.length == 0
+#sbinding.pry if value.min > 0
+#          binding.pry if min == 3
+        if position >= min && position + text.length <= max
+          $log.puts "B position:#{position} min:#{min} max:#{max} length:#{length} range:#{(position..text.length)} text:#{text[0..text.length].inspect} "
+          line << text[0..text.length]
+          position += text.length
+ #       $log.puts "B position: #{position}"
+        elsif position < min && position + text.length > min && position + text.length < max
+          $log.puts "C position:#{position} min:#{min} max:#{max} length:#{length} range:#{(min-position..text.length)} text:#{text[min-position..text.length].inspect} "
+
+          line << text[min-position..text.length]
+          $log.puts "postion was: #{position} is: #{position + text.length - min-position}"
+          position += text.length
+        elsif position < min && position + text.length > min && position + text.length > max
+          $log.puts "C2 position:#{position} min:#{min} max:#{max} length:#{length} range:#{(min-position..text.length-max)} text:#{text[min-position..text.length-max].inspect} "
+
+#binding.pry if min == 11
+          line << text[min-position..max-position]
+          $log.puts "postion was: #{position} is: #{position + max}"
+          position += text.length
         elsif position >= min && position + text.length > max
-          end_range = max - position - text.length
+          end_range = max - position
+          next if end_range == 0
+          $log.puts "D position:#{position} min:#{min} max:#{max} length:#{length} range:#{(0..end_range)} text:#{text[0..end_range].inspect} "
+#          binding.pry
           line << text[0..end_range]
+          position += end_range
+  #       $log.puts "C position: #{position}"
+        elsif position >= min
+          $log.puts "E position:#{position} min:#{min} max:#{max} length:#{length} range:#{(0..text.length)} text:#{text[0..text.length].inspect} "
+          # $log.puts "position:#{position} min:#{min} max:#{max} length:#{length} text:#{text[min..max].inspect}"
+    #       line << text[0..text.length]
+          line << text[0..text.length]
+          position += text.length
+#          fail "Not implemented 2"
         else
-          fail "Not implemented 2"
+          $log.puts "ELSE min:#{min} max:#{max} postion was: #{position} is: #{position + text.length}"
+          position += [max,text.length].min
         end
-        position += text.length
+#        $log.puts "E position: #{position}"
       end
     else
       fail "Not implemented 1"
